@@ -27,9 +27,17 @@ class VstChainWorker(object):
 
 
     @NLogger.wrap('DEBUG')
-    def _vst_plugin_create(self, vst_host, vst_lib_path, samplerate, max_channels, parameters):
+    def _vst_plugin_create(self, vst_host, samplerate, **kwargs):
         """ """
+        vst_lib_path = kwargs.get("path", "")
+        shell_uid = kwargs.get("shell_uid", -1)
+        max_channels = kwargs.get("max_channels", 8)
+        parameters = kwargs.get("params", {})
+
         assert os.path.isfile(vst_lib_path)
+        assert isinstance(shell_uid, int)
+        assert isinstance(max_channels, int) and max_channels > 0 and max_channels < 16
+        assert isinstance(parameters, dict)
 
         plugin = VstPlugin(
             vst_host,
@@ -38,6 +46,7 @@ class VstChainWorker(object):
             block_size=self._buffer_size,
             max_channels=max_channels,
             self_buffers=True,
+            shell_uid=shell_uid,
             log_level=self.logger.level
         )
         #
@@ -63,7 +72,7 @@ class VstChainWorker(object):
         chain_list = []
         for k,v in json_list["plugins_list"].items():
             chain_list.append(
-                self._vst_plugin_create( vst_host, v["path"], samplerate, v["max_channels"], v["params"] )
+                self._vst_plugin_create( vst_host, samplerate, **v )
             )
         return chain_list
 

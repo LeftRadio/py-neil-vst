@@ -25,9 +25,15 @@ class VstPlugin(object):
         global _init_host
         _init_host = host
 
+        # get unique ID for shell dll (like Waves) and save it to host
+        _init_host.shell_uid = kwargs.get("shell_uid", -1)
+
         # load VST and create self instance
         self._path_to_lib = vst_path_lib
         self._instance = self._load_vst_dll(self._path_to_lib)
+
+        # reset shell uid for load plugin
+        _init_host.shell_uid = -1
 
         # save host to bind list
         VstPlugin._host_binds.pop(self.unique_id, None)
@@ -80,6 +86,10 @@ class VstPlugin(object):
     @property
     def unique_id(self):
         return (<AEffect*> <long long> self._instance).uniqueID
+
+    @property
+    def shell_unique_id(self):
+        return self._shell_unique_id
 
     @property
     def version(self):

@@ -21,10 +21,22 @@ class VstHost(object):
         cdef VstTimeInfo *c_time_info_ptr = <VstTimeInfo*> malloc(sizeof(VstTimeInfo))
         self._time_info = <long long> c_time_info_ptr
         #
+        self._shell_uid = kwargs.get("shell_uid", -1)
+        #
         self.logger = NLogger.init('VstHost', kwargs.get("log_level", 'WARNING'))
 
     def __del__(self):
         free( <void*> <long long> self._time_info )
+
+    # -------------------------------------------------------------------------
+
+    @property
+    def shell_uid(self):
+        return self._shell_uid
+
+    @shell_uid.setter
+    def shell_uid(self, value):
+        self._shell_uid = value
 
     # -------------------------------------------------------------------------
 
@@ -69,7 +81,10 @@ class VstHost(object):
             res = VstHost.VST_VERSION
 
         elif opcode == AudioMasterOpcodes.audioMasterCurrentId:
-            res = c_plugin_pointer.uniqueID
+            if self._shell_uid != -1:
+                res = self._shell_uid
+            else:
+                res = c_plugin_pointer.uniqueID
 
         elif opcode == AudioMasterOpcodes.audioMasterGetBlockSize:
             res = self.block_size
