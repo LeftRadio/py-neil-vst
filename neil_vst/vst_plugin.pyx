@@ -7,6 +7,7 @@ from libc.stdlib cimport malloc, free
 
 from .vst_header cimport *
 from .vst_host import VstHost
+from .vst_exceptions import VSTPluginLoadException
 from .logger import NLogger
 
 
@@ -180,18 +181,24 @@ class VstPlugin(object):
 
     def _load_vst_dll(self, path_to_vst_lib):
         """ """
-        assert os.path.isfile(path_to_vst_lib), "VST DLL File not found!"
+        if not os.path.isfile(path_to_vst_lib):
+            raise VSTPluginLoadException("VST dll file - [%s] not found!" % path_to_vst_lib)
 
         # https://docs.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibraryexa
         cdef HMODULE handle = LoadLibraryA(bytes(path_to_vst_lib, "utf-8"))
-        assert handle is not NULL, "null pointer when loading a DLL. Error code = " + str(GetLastError())
+        if handle is NULL:
+            raise VSTPluginLoadException("null pointer when loading a DLL. Error code = " + str(GetLastError()))
         #
         cdef VSTPluginMainPtr entry_function = <VSTPluginMainPtr> GetProcAddress(handle, "VSTPluginMain");
-        assert entry_function is not NULL, "null pointer when obtaining an address of the entry function. Error code = " + str(GetLastError())
+        if entry_function is NULL:
+            raise VSTPluginLoadException("null pointer when obtaining an address of the entry function. Error code = " + str(GetLastError()))
         #
         cdef AEffect *_instance = entry_function(_c_host_callback)
         #
-        assert VST_MAGIC_NUM == _instance.magic, 'VST "magic number" is wrong!'
+        if <long long> _instance == 0:
+            raise VSTPluginLoadException("Load the VST dll are failed!")
+        if VST_MAGIC_NUM != _instance.magic:
+            raise VSTPluginLoadException('VST "magic number" is wrong!')
 
         return <long long> _instance
 

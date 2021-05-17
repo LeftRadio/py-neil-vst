@@ -14,7 +14,9 @@ ext_modules = cythonize( [
         'neil_vst/vst_host.pyx',
         'neil_vst/vst_plugin.pyx',
         'neil_vst/vst_chain_worker.pyx',
-        'neil_vst/logger.pyx'],
+        'neil_vst/logger.pyx',
+        'neil_vst/vst_exceptions.pyx'
+],
         compiler_directives={
             'language_level': "3"
             # 'optimize.use_switch': False,

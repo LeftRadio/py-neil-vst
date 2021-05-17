@@ -1,0 +1,4 @@
+
+
+class VSTPluginLoadException(Exception):
+    pass
