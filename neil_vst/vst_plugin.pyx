@@ -170,6 +170,8 @@ class VstPlugin(object):
 
     def _load_vst_dll(self, path_to_vst_lib):
         """ """
+        assert os.path.isfile(path_to_vst_lib), "VST DLL File not found!"
+
         # https://docs.microsoft.com/en-us/windows/win32/api/libloaderapi/nf-libloaderapi-loadlibraryexa
         cdef HMODULE handle = LoadLibraryA(bytes(path_to_vst_lib, "utf-8"))
         assert handle is not NULL, "null pointer when loading a DLL. Error code = " + str(GetLastError())

@@ -68,14 +68,7 @@ class VstChainWorker(object):
         return chain_list
 
     @NLogger.wrap('DEBUG')
-    def rms_normilize(self, in_filepath, target_rms_dB=None, error_db=0.0, peak_limit=False):
-        #
-        assert os.path.isfile(in_filepath)
-        assert target_rms_dB is not None and target_rms_dB <= 0
-        assert error_db >= 0
-        #
-        self.logger.info( "RMS normilize for '%s', target level: %.3f db" % (in_filepath, target_rms_dB) )
-
+    def rms_peak_measurment(self, in_filepath):
         # open input audio file
         in_file = soundfile.SoundFile(in_filepath, mode='r', closefd=True)
 
@@ -93,21 +86,34 @@ class VstChainWorker(object):
         in_file.close()
 
         meas_rms_float /= block_cnt
-        meas_rms = (20 * math.log10(meas_rms_float)) + NORMILIZED_RMS_DB_TO_60ms_ATTACK_200ms_RELEASE
-        self.logger.info( "RMS measured: [%s], %.3f dB" % (meas_rms_float, meas_rms) )
+        meas_rms_db = (20 * math.log10(meas_rms_float)) + NORMILIZED_RMS_DB_TO_60ms_ATTACK_200ms_RELEASE
+        self.logger.info( "RMS measured for '%s': [%s], %.3f dB" % (in_filepath, meas_rms_float, meas_rms_db) )
 
         peak_max_db = math.log10(1.0 / peak_max) * 20
-        self.logger.info( "Peak maximum: [%s], -%.3f dB" % (peak_max, peak_max_db) )
+        self.logger.info( "Peak maximum for '%s': [%s], -%.3f dB" % (in_filepath, peak_max, peak_max_db) )
 
-        if meas_rms > (target_rms_dB - error_db) and meas_rms < (target_rms_dB + error_db):
-            self.logger.info("Normilize not needed, level is %.3f dB" % meas_rms)
+        return (meas_rms_float, meas_rms_db, peak_max, peak_max_db)
+
+    @NLogger.wrap('DEBUG')
+    def rms_normilize(self, in_filepath, target_rms_dB=None, error_db=0.0, peak_limit=False):
+        #
+        assert os.path.isfile(in_filepath)
+        assert target_rms_dB is not None and target_rms_dB <= 0
+        assert error_db >= 0
+        #
+        self.logger.info( "RMS normilize for '%s', target level: %.3f db" % (in_filepath, target_rms_dB) )
+
+        meas_rms_float, meas_rms_db, peak_max, peak_max_db = self.rms_peak_measurment(in_filepath)
+
+        if meas_rms_db > (target_rms_dB - error_db) and meas_rms_db < (target_rms_dB + error_db):
+            self.logger.info("Normilize not needed, level is %.3f dB" % meas_rms_db)
             return (0.0, 0.0)
 
-        change_in_dB = target_rms_dB - meas_rms
+        change_in_dB = target_rms_dB - meas_rms_db
 
         if peak_limit and change_in_dB > peak_max_db:
             change_in_dB = peak_max_db - 0.5
-            self.logger.warning("Peak limit, new normilize level is -%.3f dB" % (meas_rms+change_in_dB))
+            self.logger.warning("Peak limit, new normilize level is -%.3f dB" % (meas_rms_db+change_in_dB))
 
         float_coeff = math.pow( 10, change_in_dB / 20 )
         self.logger.info( "Coeff: [%s], -%.3f dB" % (float_coeff, change_in_dB) )
@@ -177,14 +183,19 @@ class VstChainWorker(object):
     @NLogger.wrap('DEBUG')
     def procces_file(self, job_file, chain_name, infilepath, outfilepath):
         """ """
-        assert os.path.isfile(job_file)
-
         start = time.time()
-        self.logger.info("[ START.... ] - %s - %s - %s - %s " % (os.path.basename(job_file), chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
 
         # open json job file
-        with open(job_file, "r") as f:
-            json_data = json.load(f)
+        try:
+            with open(job_file, "r") as f:
+                json_data = json.load(f)
+            f = os.path.basename(job_file)
+        except Exception as e:
+            json_data = job_file
+            f = "json dict"
+
+        self.logger.info("[ START.... ] - %s - %s - %s - %s " % (f, chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
+
         json_list = json_data["plugins_chain"][chain_name]
 
         # open input audio file
@@ -203,5 +214,5 @@ class VstChainWorker(object):
         in_file.close()
         out_file.close()
         end_time = time.time()-start
-        self.logger.info("[ COMPLITE ] - %s - %s - %s - %s " % (os.path.basename(job_file), chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
+        self.logger.info("[ COMPLITE ] - %s - %s - %s - %s " % (f, chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
         self.logger.info("[ END ] - Elapsed time: [ %s ]\n" % end_time)
