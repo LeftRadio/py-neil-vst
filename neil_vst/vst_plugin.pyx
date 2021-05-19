@@ -33,9 +33,6 @@ class VstPlugin(object):
         self._path_to_lib = vst_path_lib
         self._instance = self._load_vst_dll(self._path_to_lib)
 
-        # reset shell uid for load plugin
-        _init_host.shell_uid = -1
-
         # save host to bind list
         VstPlugin._host_binds.pop(self.unique_id, None)
         VstPlugin._host_binds[self.unique_id] = host
@@ -71,12 +68,17 @@ class VstPlugin(object):
 
     def __del__(self):
         """ Free all allocated memory buffers """
+        # free allocated buffers
         if self._in_out_self_buffers:
             self._free_buffers()
+        # close plugin
+        self._dispatch_to_c_plugin(AEffectOpcodes.effClose, 0, 0, <long long> NULL, 0.0)
+        # delete plugin from bind list
+        VstPlugin._host_binds.pop(self.unique_id, None)
+        # free other buffers
         free( <void*> <long long> self._c_string_buff )
         free( <void*> <long long> self._c_in_channels_buff )
         free( <void*> <long long> self._c_out_channels_buff )
-        VstPlugin._host_binds.pop(self.unique_id, None)
 
     # -------------------------------------------------------------------------
 
