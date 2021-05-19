@@ -20,6 +20,8 @@ class VstChainWorker(object):
     def __init__(self, buffer_size=1024, **kwargs):
         """ """
         self._buffer_size = buffer_size
+        #
+        self._display_info_after_load = kwargs.get("display_info", False)
         self.logger = NLogger.init('VstChainWorker', kwargs.get("log_level", 'WARNING'))
 
 
@@ -34,7 +36,7 @@ class VstChainWorker(object):
         max_channels = kwargs.get("max_channels", 8)
         parameters = kwargs.get("params", {})
 
-        assert os.path.isfile(vst_lib_path)
+        assert os.path.isfile(vst_lib_path), "%s is not a file!" % vst_lib_path
         assert isinstance(shell_uid, int)
         assert isinstance(max_channels, int) and max_channels > 0 and max_channels < 16
         assert isinstance(parameters, dict)
@@ -60,7 +62,9 @@ class VstChainWorker(object):
             )
 
         self.logger.info("LOADED VST PLUGIN: %s " % plugin.name)
-        self.logger.debug("\n\n%s" % plugin.info())
+
+        if self._display_info_after_load:
+            NLogger.current_level(self.logger, "\n\n%s" % plugin.info())
 
         return plugin
 
@@ -98,46 +102,10 @@ class VstChainWorker(object):
         meas_rms_db = (20 * math.log10(meas_rms_float)) + NORMILIZED_RMS_DB_TO_60ms_ATTACK_200ms_RELEASE
         self.logger.info( "RMS measured for '%s': [%s], %.3f dB" % (in_filepath, meas_rms_float, meas_rms_db) )
 
-        peak_max_db = math.log10(1.0 / peak_max) * 20
-        self.logger.info( "Peak maximum for '%s': [%s], -%.3f dB" % (in_filepath, peak_max, peak_max_db) )
+        peak_max_db = math.log10(peak_max / 1.0) * 20
+        self.logger.info( "Peak maximum for '%s': [%s], %.3f dB" % (in_filepath, peak_max, peak_max_db) )
 
         return (meas_rms_float, meas_rms_db, peak_max, peak_max_db)
-
-    @NLogger.wrap('DEBUG')
-    def rms_normilize(self, in_filepath, target_rms_dB=None, error_db=0.0, peak_limit=False):
-        #
-        assert os.path.isfile(in_filepath)
-        assert target_rms_dB is not None and target_rms_dB <= 0
-        assert error_db >= 0
-        #
-        self.logger.info( "RMS normilize for '%s', target level: %.3f db" % (in_filepath, target_rms_dB) )
-
-        meas_rms_float, meas_rms_db, peak_max, peak_max_db = self.rms_peak_measurment(in_filepath)
-
-        if meas_rms_db > (target_rms_dB - error_db) and meas_rms_db < (target_rms_dB + error_db):
-            self.logger.info("Normilize not needed, level is %.3f dB" % meas_rms_db)
-            return (0.0, 0.0)
-
-        change_in_dB = target_rms_dB - meas_rms_db
-
-        if peak_limit and change_in_dB > peak_max_db:
-            change_in_dB = peak_max_db - 0.5
-            self.logger.warning("Peak limit, new normilize level is -%.3f dB" % (meas_rms_db+change_in_dB))
-
-        float_coeff = math.pow( 10, change_in_dB / 20 )
-        self.logger.info( "Coeff: [%s], -%.3f dB" % (float_coeff, change_in_dB) )
-
-        self.logger.info("Start normilizing...")
-
-        # Normilize processing audio file
-        with soundfile.SoundFile(in_filepath, 'r+') as f:
-            while f.tell() < f.frames:
-                pos = f.tell()
-                data = f.read(1024*10)
-                f.seek(pos)
-                f.write(data*float_coeff)
-
-        self.logger.info("Normilize [ END ]; Saves to [ %s ]..." % in_filepath )
 
 
     # -------------------------------------------------------------------------
@@ -195,23 +163,39 @@ class VstChainWorker(object):
         start = time.time()
 
         # open json job file
-        try:
-            with open(job_file, "r") as f:
-                json_data = json.load(f)
-            f = os.path.basename(job_file)
-        except Exception as e:
-            json_data = job_file
-            f = "json dict"
+        with open(job_file, "r") as f:
+            json_data = json.load(f)
 
-        self.logger.info("[ START.... ] - %s - %s - %s - %s " % (f, chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
+        chain = json_data["plugins_chain"][chain_name]
 
-        json_list = json_data["plugins_chain"][chain_name]
+        if "normalize" in chain.keys():
+            self.logger.info( "Normilize [ ENABLED ]" )
+
+            target_rms_dB = chain["normalize"]["target_rms"]
+            error_db = chain["normalize"]["error_db"]
+
+            meas_rms_float, meas_rms_db, peak_max, peak_max_db = self.rms_peak_measurment(infilepath)
+            change_db = target_rms_dB - meas_rms_db
+            self.logger.info( "Normilize [ COEFFICIENT ]: %.3f dB" % change_db )
+
+            if meas_rms_db < (target_rms_dB - error_db) or meas_rms_db > (target_rms_dB + error_db):
+                limiter_settings = chain["plugins_list"]["FabFilter Pro-L 2 0"]["params"]
+                limiter_settings["Bypass"]["value"] = 0.0
+                if change_db > 0:
+                    limiter_settings["Gain"]["value"] = change_db
+                else:
+                    limiter_settings["Output Level"]["value"] = change_db
+
+
+        self.logger.info("[ VST CHAIN START.... ] - %s - %s - %s - %s " % (f, chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
+
+        # json_list = json_data["plugins_chain"][chain_name]
 
         # open input audio file
         in_file = soundfile.SoundFile(infilepath, mode='r', closefd=True)
 
         # create vst plugins chain for current job
-        _plugin_chain = self._vst_plugin_chain_create_list(json_list, in_file.samplerate)
+        _plugin_chain = self._vst_plugin_chain_create_list(chain, in_file.samplerate)
 
         # create output audio file
         out_file = soundfile.SoundFile(outfilepath, mode='w', samplerate=in_file.samplerate, channels=in_file.channels, subtype=in_file.subtype, closefd=True)
@@ -223,5 +207,5 @@ class VstChainWorker(object):
         in_file.close()
         out_file.close()
         end_time = time.time()-start
-        self.logger.info("[ COMPLITE ] - %s - %s - %s - %s " % (f, chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
-        self.logger.info("[ END ] - Elapsed time: [ %s ]\n" % end_time)
+        self.logger.info("[ VST CHAIN COMPLITE ] - %s - %s - %s - %s " % (f, chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
+        self.logger.info("[ END ] - Elapsed time: [ %s:%s ]\n" % (end_time//60, (end_time%60)*60))
