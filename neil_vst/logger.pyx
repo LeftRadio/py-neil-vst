@@ -79,6 +79,11 @@ class NLogger(object):
             return wrapper
         return logdec
 
+    @staticmethod
+    def current_level(logger, msg):
+        _logger = getattr(logger, logging.getLevelName(logger.level).lower())
+        _logger(msg)
+
 
 if __name__ == '__main__':
 
