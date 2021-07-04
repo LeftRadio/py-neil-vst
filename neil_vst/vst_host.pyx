@@ -132,9 +132,11 @@ class VstHost(object):
             res = 1
 
         elif opcode == AudioMasterOpcodes.audioMasterSizeWindow:
+            self.gui_callback("audioMasterSizeWindow", plugin, index, value, ptr, opt)
             res = 0
 
         elif opcode == AudioMasterOpcodes.audioMasterUpdateDisplay:
+            self.gui_callback("audioMasterUpdateDisplay", plugin, index, value, ptr, opt)
             res = 0
 
         elif opcode == AudioMasterOpcodes.audioMasterBeginEdit:
