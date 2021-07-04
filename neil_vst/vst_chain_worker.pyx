@@ -22,7 +22,7 @@ class VstChainWorker(object):
         self._buffer_size = buffer_size
         #
         self._display_info_after_load = kwargs.get("display_info", False)
-        self.logger = NLogger.init('VstChainWorker', kwargs.get("log_level", 'WARNING'))
+        self.logger = kwargs.get("logger", NLogger.init('VstChainWorker', kwargs.get("log_level", 'WARNING')))
 
 
     # -------------------------------------------------------------------------
@@ -49,6 +49,7 @@ class VstChainWorker(object):
             max_channels=max_channels,
             self_buffers=True,
             shell_uid=shell_uid,
+            logger=self.logger,
             log_level=self.logger.level
         )
         #
@@ -71,7 +72,7 @@ class VstChainWorker(object):
     @NLogger.wrap('DEBUG')
     def _vst_plugin_chain_create_list(self, json_list, samplerate):
         """ """
-        vst_host = VstHost(samplerate, self._buffer_size, log_level=self.logger.level)
+        vst_host = VstHost(samplerate, self._buffer_size, logger=self.logger, log_level=self.logger.level)
 
         chain_list = []
         for k,v in json_list["plugins_list"].items():
@@ -100,11 +101,9 @@ class VstChainWorker(object):
 
         meas_rms_float /= block_cnt
         meas_rms_db = (20 * math.log10(meas_rms_float)) + NORMILIZED_RMS_DB_TO_60ms_ATTACK_200ms_RELEASE
-        self.logger.info( "RMS measured for '%s': [%s], %.3f dB" % (in_filepath, meas_rms_float, meas_rms_db) )
-
         peak_max_db = math.log10(peak_max / 1.0) * 20
-        self.logger.info( "Peak maximum for '%s': [%s], %.3f dB" % (in_filepath, peak_max, peak_max_db) )
 
+        self.logger.info( "Measured for '%s' - [ RMS: %.2f dB, Peak: %.2f dB ]" % (os.path.basename(in_filepath), meas_rms_db, peak_max_db) )
         return (meas_rms_float, meas_rms_db, peak_max, peak_max_db)
 
 
@@ -155,7 +154,9 @@ class VstChainWorker(object):
         VstHost.free_buffer(temp_left)
         VstHost.free_buffer(temp_right)
 
+
     # -------------------------------------------------------------------------
+
 
     @NLogger.wrap('DEBUG')
     def procces_file(self, job_file, chain_name, infilepath, outfilepath):
@@ -187,7 +188,7 @@ class VstChainWorker(object):
                     limiter_settings["Output Level"]["value"] = change_db
 
 
-        self.logger.info("[ VST CHAIN START.... ] - %s - %s - %s - %s " % (f, chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
+        self.logger.info("[ VST CHAIN START.... ] - %s " % os.path.basename(infilepath))
 
         # json_list = json_data["plugins_chain"][chain_name]
 
@@ -207,5 +208,7 @@ class VstChainWorker(object):
         in_file.close()
         out_file.close()
         end_time = time.time()-start
-        self.logger.info("[ VST CHAIN COMPLITE ] - %s - %s - %s - %s " % (f, chain_name, os.path.basename(infilepath), os.path.basename(outfilepath)))
-        self.logger.info("[ END ] - Elapsed time: [ %s:%s ]\n" % (end_time//60, (end_time%60)*60))
+        self.logger.info("[ VST CHAIN COMPLITE ] - from %s - saved to - %s " % (os.path.basename(infilepath), os.path.basename(outfilepath)))
+        self.logger.info("[ END ] - Elapsed time: [ %.3f | %.3f ]" % (end_time, end_time/60))
+
+

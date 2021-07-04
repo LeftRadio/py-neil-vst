@@ -64,7 +64,7 @@ class VstPlugin(object):
         self._dispatch_to_c_plugin(AEffectOpcodes.effSetBlockSize, 0, block_size, <long long> NULL, 0.0)
 
         # init self logger
-        self.logger = NLogger.init('VstPlugin', kwargs.get("log_level", 'WARNING'))
+        self.logger = kwargs.get("logger", NLogger.init('VstPlugin', kwargs.get("log_level", 'WARNING')))
 
     def __del__(self):
         """ Free all allocated memory buffers """
@@ -384,6 +384,8 @@ class VstPlugin(object):
             output_pointers[index] = <double*> tmp
         # call the VST dll
         _instance.processDoubleReplacing(_instance, input_pointers, output_pointers, block_len)
+
+    # -------------------------------------------------------------------------
 
 
 # -----------------------------------------------------------------------------

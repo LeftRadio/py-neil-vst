@@ -12,9 +12,9 @@ class VstHost(object):
 
     VST_VERSION = 2400
 
-    def __init__(self, sample_rate, buffer_size, **kwargs):
+    def __init__(self, sample_rate, block_size=1024, **kwargs):
         self.sample_rate = sample_rate
-        self.block_size = buffer_size
+        self.block_size = block_size
         self.bpm = 120.0
         self.sample_position = 0
         #
@@ -23,7 +23,10 @@ class VstHost(object):
         #
         self._shell_uid = kwargs.get("shell_uid", -1)
         #
-        self.logger = NLogger.init('VstHost', kwargs.get("log_level", 'WARNING'))
+        self.gui_callback = kwargs.get("gui_callback", (lambda name, plugin, index, value, ptr, opt: "", 0, 0, 0, 0, 0))
+        #
+        self.logger = kwargs.get("logger", NLogger.init('VstHost', kwargs.get("log_level", 'WARNING')))
+
 
     def __del__(self):
         free( <void*> <long long> self._time_info )
@@ -130,8 +133,6 @@ class VstHost(object):
 
         elif opcode == AudioMasterOpcodes.audioMasterSizeWindow:
             res = 0
-
-
 
         elif opcode == AudioMasterOpcodes.audioMasterUpdateDisplay:
             res = 0
