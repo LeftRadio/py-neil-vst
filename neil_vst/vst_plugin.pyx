@@ -57,6 +57,9 @@ class VstPlugin(object):
         # buffer for returns from "parameter_name", "parameter_label" etc.
         cdef void* _c_char_buff = malloc( 1024 * sizeof(char) )
         self._c_string_buff = <long long> _c_char_buff
+        # buffer for returns from "edit_get_rect"
+        cdef int* e_rect = <int*> <long long> malloc(16)
+        self._c_rect_buff = <long long> e_rect
 
         # start VST plugin
         self._dispatch_to_c_plugin(AEffectOpcodes.effOpen, 0, 0, <long long> NULL, 0.0)
@@ -77,6 +80,7 @@ class VstPlugin(object):
         VstPlugin._host_binds.pop(self.unique_id, None)
         # free other buffers
         free( <void*> <long long> self._c_string_buff )
+        free( <void*> <long long> self._c_rect_buff )
         free( <void*> <long long> self._c_in_channels_buff )
         free( <void*> <long long> self._c_out_channels_buff )
 
@@ -387,11 +391,26 @@ class VstPlugin(object):
 
     # -------------------------------------------------------------------------
 
+    def edit_get_rect(self):
+        cdef int* e_rect = <int*> <long long> self._c_rect_buff
+        self._dispatch_to_c_plugin(AEffectOpcodes.effEditGetRect, 0, 0, <long long> (&e_rect), 0.0)
+        py_rect = { "top":(<ERect*>e_rect).top, "left": (<ERect*>e_rect).left, "bottom": (<ERect*>e_rect).bottom, "right": (<ERect*>e_rect).right }
+        self.logger.debug("EDIT GET RECT: %s" % py_rect)
+        return py_rect
+
+    def edit_open(self, window_pointer):
+        self.logger.debug("EDIT OPEN...")
+        self._dispatch_to_c_plugin(AEffectOpcodes.effEditOpen, 0, 0, <long long> window_pointer, 0.0)
+
+    def edit_close(self, window_pointer):
+        self.logger.debug("EDIT CLOSE...")
+        self._dispatch_to_c_plugin(AEffectOpcodes.effEditClose, 0, 0, <long long> NULL, 0.0)
+
 
 # -----------------------------------------------------------------------------
 
 
-cdef VstIntPtr _c_host_callback(AEffect* plugin, VstInt32 opcode, VstInt32 index, VstIntPtr value, void* ptr, float opt):
+cdef VstIntPtr _c_host_callback(AEffect* plugin, VstInt32 opcode, VstInt32 index, VstIntPtr value, void* ptr, float opt) with gil :
     """ C-level entry for accessing host through sending opcodes """
     global _init_host
     plugin_p = <long long> plugin
