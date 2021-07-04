@@ -93,3 +93,37 @@ for block in in_file.blocks(blocksize=self._buffer_size, always_2d=True):
 
 ```
 
+Open VST plugin GUI with PyQt5 QWidget with callback example:
+```python
+import sys
+import logging
+from PyQt5 import QtWidgets
+from neil_vst import VstHost, VstPlugin
+
+
+class VSTPluginWindowExample(QtWidgets.QWidget):
+
+    def __init__(self, plugin, parent=None):
+        super(VSTPluginWindowExample, self).__init__(parent)
+
+        # set self window name
+        self.setWindowTitle(plugin.name)
+        # set self size corresponding to plugin size
+        rect = plugin.edit_get_rect()
+        self.resize(rect["right"], rect["bottom"])
+        # open plugin GUI to self
+        plugin.edit_open(int(self.winId()))
+        # self show
+        self.show()
+
+
+if __name__ == '__main__':
+    app = QtWidgets.QApplication(sys.argv)
+
+    vst_host = VstHost(44100, log_level=logging.DEBUG)
+    plugin = VstPlugin(vst_host, "C:/Program Files/Common Files/VST2/TDR VOS SlickEQ.dll", log_level=logging.DEBUG)
+
+    plugin_window = VSTPluginWindowExample(plugin)
+
+    sys.exit(app.exec_())
+```
