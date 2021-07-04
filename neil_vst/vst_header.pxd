@@ -1,5 +1,5 @@
 #
-from libc.stdint cimport int64_t, int32_t
+from libc.stdint cimport int16_t, int32_t, int64_t
 
 
 cdef extern from "windows.h":
@@ -27,6 +27,7 @@ cdef extern from "libloaderapi.h":
 
 cdef extern from "aeffectx.h":
 
+    ctypedef int16_t VstInt16
     ctypedef int32_t VstInt32
     ctypedef int64_t VstIntPtr
 
@@ -215,6 +216,13 @@ cdef extern from "aeffectx.h":
         AEffectProcessProc processReplacing
         AEffectProcessDoubleProc processDoubleReplacing
         char future[56]
+
+    cdef struct ERect:
+        VstInt16 top
+        VstInt16 left
+        VstInt16 bottom
+        VstInt16 right
+
 
     cdef enum VstAEffectFlags:
         effFlagsHasEditor     = 1 << 0
