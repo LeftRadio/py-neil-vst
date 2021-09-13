@@ -352,12 +352,16 @@ class VstPlugin(object):
 
     def process_replacing(self, input_channels, output_channels, block_len: int):
         """ """
+        # extend buffer channels if needed (for example: MONO OUT -> VST PLUGIN STEREO IN)
+        if self.input_channels > len(input_channels):
+            for ch in range(self.input_channels - len(input_channels)):
+                p = input_channels[ch]
+                input_channels.append(p)
         # get the plugin C pointer
         cdef AEffect* _instance = <AEffect*> <long long> self._instance
         # create channel data C pointers arrays
         cdef float** input_pointers = <float**> <long long> self._c_in_channels_buff
         cdef float** output_pointers = <float**> <long long> self._c_out_channels_buff
-
         # input
         for index in range(self.input_channels):
             tmp = <long long> input_channels[index]
@@ -366,13 +370,17 @@ class VstPlugin(object):
         for index in range(self.output_channels):
             tmp = <long long> output_channels[index]
             output_pointers[index] = <float*> tmp
-
         # call the VST dll
         _instance.processReplacing(_instance, input_pointers, output_pointers, block_len)
 
     def process_double_replacing(self, input_channels, output_channels, block_len: int):
         """ """
         assert self.allows_double_precision(), 'Plugin does not support the double precision.'
+        # extend buffer channels if needed (for example: MONO OUT -> VST PLUGIN STEREO IN)
+        if self.input_channels > len(input_channels):
+            for ch in range(self.input_channels - len(input_channels)):
+                p = input_channels[ch]
+                input_channels.append(p)
         # get the plugin C pointer
         cdef AEffect* _instance = <AEffect*> <long long> self._instance
         # create channel data C pointers arrays
