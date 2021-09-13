@@ -23,7 +23,7 @@ class VstHost(object):
         #
         self._shell_uid = kwargs.get("shell_uid", -1)
         #
-        self.gui_callback = kwargs.get("gui_callback", (lambda name, plugin, index, value, ptr, opt: "", 0, 0, 0, 0, 0))
+        self.gui_callback = kwargs.get("gui_callback", None)
         #
         self.logger = kwargs.get("logger", NLogger.init('VstHost', kwargs.get("log_level", 'WARNING')))
 
@@ -132,11 +132,13 @@ class VstHost(object):
             res = 1
 
         elif opcode == AudioMasterOpcodes.audioMasterSizeWindow:
-            self.gui_callback("audioMasterSizeWindow", plugin, index, value, ptr, opt)
+            if self.gui_callback:
+                self.gui_callback("audioMasterSizeWindow", plugin, index, value, ptr, opt)
             res = 0
 
         elif opcode == AudioMasterOpcodes.audioMasterUpdateDisplay:
-            self.gui_callback("audioMasterUpdateDisplay", plugin, index, value, ptr, opt)
+            if self.gui_callback:
+                self.gui_callback("audioMasterUpdateDisplay", plugin, index, value, ptr, opt)
             res = 0
 
         elif opcode == AudioMasterOpcodes.audioMasterBeginEdit:
