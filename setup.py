@@ -4,6 +4,9 @@ from pathlib import Path
 import os
 import os.path
 from Cython.Build import cythonize
+# from neil_vst import __version__
+
+__version__ = '0.2.6'
 
 this_directory = os.path.dirname(__file__)
 packages = setuptools.find_packages()
@@ -34,7 +37,7 @@ with open( str(this_directory) + '/README.md', "r" ) as f:
 
 setuptools.setup(
     name='neil_vst',
-    version='0.1.0',
+    version=__version__,
     ext_modules=ext_modules,
     packages=packages,
     license='MIT',
@@ -44,7 +47,7 @@ setuptools.setup(
     install_requires=[
        'Cython>=0.29.19',
        'SoundFile>=0.10.3.post1',
-       'numpy>=1.19.3'
+       'numpy==1.19.0'
     ],
     author='Vladislav Kamenev',  # Type in your name
     author_email='',
