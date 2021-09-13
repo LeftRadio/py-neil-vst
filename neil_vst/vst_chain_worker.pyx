@@ -10,6 +10,8 @@ import soundfile
 from .vst_host import VstHost
 from .vst_plugin import VstPlugin
 from .logger import NLogger
+from .vst_exceptions import VST_ChainWorkException
+
 
 
 class VstChainWorker(object):
@@ -82,6 +84,24 @@ class VstChainWorker(object):
         return chain_list
 
     @NLogger.wrap('DEBUG')
+    def _vst_plugin_chain_channels_range(self, chain, in_file):
+        channels_range = range(in_file.channels)
+        #
+        for vst_plugin in chain:
+            if vst_plugin.output_channels < in_file.channels:
+                raise VST_ChainWorkException(
+                    "VST [%s] has OUTPUT channels count [%d] less than audio file channels [%d]" % (vst_plugin.name, vst_plugin.output_channels, in_file.channels))
+            if vst_plugin.input_channels < in_file.channels:
+                raise VST_ChainWorkException(
+                    "VST [%s] has INPUT channels count [%d] less than audio file channels [%d]" % (vst_plugin.name, vst_plugin.input_channels, in_file.channels))
+        #
+        return channels_range
+
+
+    # -------------------------------------------------------------------------
+
+
+    @NLogger.wrap('DEBUG')
     def rms_peak_measurment(self, in_filepath):
         # open input audio file
         in_file = soundfile.SoundFile(in_filepath, mode='r', closefd=True)
@@ -106,70 +126,61 @@ class VstChainWorker(object):
         self.logger.info( "Measured for '%s' - [ RMS: %.2f dB, Peak: %.2f dB ]" % (os.path.basename(in_filepath), meas_rms_db, peak_max_db) )
         return (meas_rms_float, meas_rms_db, peak_max, peak_max_db)
 
-
-    # -------------------------------------------------------------------------
-
-
     @NLogger.wrap('DEBUG')
-    def _vst_plugin_chain_process_file(self, chain, in_file, out_file):
+    def vst_plugin_chain_process_file(self, chain, in_file, out_file):
 
-        temp_left = VstHost.allocate_float_buffer(self._buffer_size)
-        temp_right = VstHost.allocate_float_buffer(self._buffer_size)
+        # verify and get range for input/output file channels and plugins channels
+        channels_range = self._vst_plugin_chain_channels_range(chain, in_file)
 
-        l_index = r_index = 0
-        if in_file.channels > 1:
-            r_index = 1
+        # allocate channels temporary C buffers memory
+        temp_buffer = []
+        for ch in channels_range:
+            temp_buffer.append( VstHost.allocate_float_buffer(self._buffer_size) )
 
+        # read block -> plugins chain work -> write block
         for block in in_file.blocks(blocksize=self._buffer_size, always_2d=True):
-
+            #
             block_len = len(block)
             block_rl = block.transpose()
 
-            in_left = block_rl[l_index].astype(numpy.float32).ctypes.data
-            in_right = block_rl[r_index].astype(numpy.float32).ctypes.data
+            # copy channel data and fill C pointers array
+            in_buf_c_p = []
+            for ch in channels_range:
+                data_ch = block_rl[ch].astype(numpy.float32)
+                VstHost.copy_buffer(temp_buffer[ch], data_ch.ctypes.data, block_len)
+                in_buf_c_p.append(temp_buffer[ch])
 
-            VstHost.copy_buffer(temp_left, in_left, block_len)
-            VstHost.copy_buffer(temp_right, in_right, block_len)
-            buf_in = [ temp_left, temp_right ]
-
-
+            # VST plugins chain work
             for vst_plugin in chain:
+                # vst process
+                vst_plugin.process_replacing( in_buf_c_p, vst_plugin.out_buffers, block_len )
+                in_buf_c_p = vst_plugin.out_buffers
 
-                if vst_plugin.input_channels > len(buf_in):
-                    for ch in range(vst_plugin.input_channels - len(buf_in)):
-                        p = buf_in[ch]
-                        buf_in.append( p )
+            # prepare out block data
+            out_np_array = []
+            for ch in channels_range:
+                out_np_array.append( numpy.ctypeslib.as_array( ctypes.cast(chain[-1].out_buffers[ch], ctypes.POINTER(ctypes.c_float)), shape=(block_len, 1) ) )
 
-                vst_plugin.process_replacing( buf_in, vst_plugin.out_buffers, block_len )
-                buf_in = vst_plugin.out_buffers
+            # write out block data
+            out_file.write(
+                numpy.column_stack( tuple(out_np_array[ch] for ch in channels_range) )
+            )
 
-
-            out_left_np = numpy.ctypeslib.as_array( ctypes.cast(chain[-1].out_buffers[0], ctypes.POINTER(ctypes.c_float)), shape=(block_len,) )
-            if r_index:
-                out_right_np = numpy.ctypeslib.as_array( ctypes.cast(chain[-1].out_buffers[1], ctypes.POINTER(ctypes.c_float)), shape=(block_len,) )
-                out_left_np = numpy.column_stack((out_left_np, out_right_np))
-            #
-            out_file.write(out_left_np)
-
-        VstHost.free_buffer(temp_left)
-        VstHost.free_buffer(temp_right)
-
-
-    # -------------------------------------------------------------------------
-
+        # free channels temporary C buffers memory
+        for ch in channels_range:
+            VstHost.free_buffer(temp_buffer[ch])
 
     @NLogger.wrap('DEBUG')
-    def procces_file(self, job_file, chain_name, infilepath, outfilepath):
+    def procces_file(self, job_file, infilepath, outfilepath):
         """ """
         start = time.time()
 
         # open json job file
         with open(job_file, "r") as f:
             json_data = json.load(f)
+        chain = json_data
 
-        chain = json_data["plugins_chain"][chain_name]
-
-        if "normalize" in chain.keys():
+        if "normalize" in chain.keys() and chain["normalize"]["enable"]:
             self.logger.info( "Normilize [ ENABLED ]" )
 
             target_rms_dB = chain["normalize"]["target_rms"]
@@ -180,17 +191,21 @@ class VstChainWorker(object):
             self.logger.info( "Normilize [ COEFFICIENT ]: %.3f dB" % change_db )
 
             if meas_rms_db < (target_rms_dB - error_db) or meas_rms_db > (target_rms_dB + error_db):
-                limiter_settings = chain["plugins_list"]["FabFilter Pro-L 2 0"]["params"]
-                limiter_settings["Bypass"]["value"] = 0.0
-                if change_db > 0:
-                    limiter_settings["Gain"]["value"] = change_db
-                else:
-                    limiter_settings["Output Level"]["value"] = change_db
-
+                try:
+                    limiter_settings = chain["plugins_list"]["FabFilter Pro-L 2 (0)"]["params"]
+                    limiter_settings["Bypass"]["value"] = 0.0
+                    if change_db > 0:
+                        limiter_settings["Gain"]["value"] = change_db
+                        limiter_settings["Gain"]["fullscale"] = 30.0
+                        limiter_settings["Gain"]["normalized"] = False
+                    else:
+                        limiter_settings["Output Level"]["value"] = change_db
+                        limiter_settings["Output Level"]["fullscale"] = -30.0
+                        limiter_settings["Output Level"]["normalized"] = False
+                except KeyError:
+                    self.logger.warning("FabFilter Pro-L 2 as the first plugin in chain are not found! Normilize are [ DISABLED ]")
 
         self.logger.info("[ VST CHAIN START.... ] - %s " % os.path.basename(infilepath))
-
-        # json_list = json_data["plugins_chain"][chain_name]
 
         # open input audio file
         in_file = soundfile.SoundFile(infilepath, mode='r', closefd=True)
@@ -202,7 +217,7 @@ class VstChainWorker(object):
         out_file = soundfile.SoundFile(outfilepath, mode='w', samplerate=in_file.samplerate, channels=in_file.channels, subtype=in_file.subtype, closefd=True)
 
         # process all plugins in job
-        self._vst_plugin_chain_process_file(_plugin_chain, in_file, out_file)
+        self.vst_plugin_chain_process_file(_plugin_chain, in_file, out_file)
 
         # close audiofiles
         in_file.close()
@@ -210,5 +225,3 @@ class VstChainWorker(object):
         end_time = time.time()-start
         self.logger.info("[ VST CHAIN COMPLITE ] - from %s - saved to - %s " % (os.path.basename(infilepath), os.path.basename(outfilepath)))
         self.logger.info("[ END ] - Elapsed time: [ %.3f | %.3f ]" % (end_time, end_time/60))
-
-
