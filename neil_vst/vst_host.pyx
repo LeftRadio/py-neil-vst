@@ -1,10 +1,13 @@
 #
-import os.path
+import ctypes
+import numpy
+
 from libc.string cimport memcpy, memset, strcpy, strlen
 from libc.stdlib cimport malloc, free
 
 from .vst_header cimport *
 from .logger import NLogger
+from .vst_exceptions import VST_HostChainException
 
 
 class VstHost(object):
@@ -26,7 +29,8 @@ class VstHost(object):
         self.gui_callback = kwargs.get("gui_callback", None)
         #
         self.logger = kwargs.get("logger", NLogger.init('VstHost', kwargs.get("log_level", 'WARNING')))
-
+        #
+        self._process_chain_stop = False
 
     def __del__(self):
         free( <void*> <long long> self._time_info )
@@ -62,7 +66,96 @@ class VstHost(object):
     def free_buffer(pointer):
         free(<void*> <long long> pointer)
 
+
     # -------------------------------------------------------------------------
+
+    @NLogger.wrap('DEBUG')
+    def process_chain_start(self, filename, channels, plugins_chain, in_blocks_np, out_write_cb, frames=-1, start=0, stop=None):
+        """
+        channels: int
+            The number of audio channels
+        plugins_chain: list
+            The list of VST plugins, all plugins must be successfuly loaded
+        in_blocks_np: numpy.ndarray
+            Blocks of audio data.
+        out_write_cb: output data callback function
+            Called this function after end of each audio block in in_blocks_np,
+            numpy.ndarray data return
+        frames : int, optional
+            The number of frames to read. If `frames` is negative, the whole
+            rest of the file is read.  Not allowed if `stop` is given.
+        start : int, optional
+            Where to start reading.  A negative value counts from the end.
+        stop : int, optional
+            The index after the last frame to be read.  A negative value
+            counts from the end.  Not allowed if `frames` is given.
+        """
+        # self._process_chain_active = True
+        self._process_chain_stop = False
+
+        # verify and get range for input/output file channels and plugins channels
+        channels_range = range(channels)
+        #
+        for vst_plugin in plugins_chain:
+            if vst_plugin.output_channels < channels:
+                raise VST_HostChainException(
+                    "VST [%s] has OUTPUT channels count [%d] less than audio file channels [%d]" % (vst_plugin.name, vst_plugin.output_channels, channels))
+            if vst_plugin.input_channels < channels:
+                raise VST_HostChainException(
+                    "VST [%s] has INPUT channels count [%d] less than audio file channels [%d]" % (vst_plugin.name, vst_plugin.input_channels, channels))
+
+        # allocate channels temporary C buffers memory
+        temp_buffer = []
+        for ch in channels_range:
+            temp_buffer.append( self.allocate_float_buffer(self.block_size) )
+
+        # read block -> plugins chain work -> write block
+        for block in in_blocks_np(filename, blocksize=self.block_size, frames=frames, start=start, stop=stop, always_2d=True):
+            #
+            block_len = len(block)
+            block_rl = block.transpose()
+
+            # copy channel data and fill C pointers array
+            in_buf_c_p = []
+            for ch in channels_range:
+                data_ch = block_rl[ch].astype(numpy.float32)
+                self.copy_buffer(temp_buffer[ch], data_ch.ctypes.data, block_len)
+                in_buf_c_p.append(temp_buffer[ch])
+
+            # VST plugins chain work
+            for vst_plugin in plugins_chain:
+                # vst process
+                vst_plugin.process_replacing( in_buf_c_p, vst_plugin.out_buffers, block_len )
+                in_buf_c_p = vst_plugin.out_buffers
+
+            # prepare out block data
+            out_np_array = []
+            for ch in channels_range:
+                out_np_array.append( numpy.ctypeslib.as_array( ctypes.cast(in_buf_c_p[ch], ctypes.POINTER(ctypes.c_float)), shape=(block_len, 1) ) )
+
+            # write out block data
+            out_write_cb(
+                numpy.column_stack( tuple(out_np_array[ch] for ch in channels_range) )
+            )
+
+            if self._process_chain_stop:
+                # print("process_chain [ TERMINATE ]")
+                break
+
+        # free channels temporary C buffers memory
+        for ch in channels_range:
+            self.free_buffer(temp_buffer[ch])
+
+        # self._process_chain_active = False
+        # print("process_chain [ EXIT ]")
+
+    @NLogger.wrap('DEBUG')
+    def process_chain_stop(self):
+        self._process_chain_stop = True
+
+
+    # -------------------------------------------------------------------------
+
 
     @NLogger.wrap('DEBUG')
     def host_callback(self, plugin, opcode, index, value, ptr, opt):
