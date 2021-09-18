@@ -203,7 +203,7 @@ class VstChainWorker(object):
                         limiter_settings["Output Level"]["fullscale"] = -30.0
                         limiter_settings["Output Level"]["normalized"] = False
                 except KeyError:
-                    self.logger.warning("FabFilter Pro-L 2 as the first plugin in chain are not found! Normilize are [ DISABLED ]")
+                    self.logger.warning("[ FabFilter Pro-L 2 ] as the first plugin in chain are not found! Normilize are [ DISABLED ]")
 
         self.logger.info("[ VST CHAIN START.... ] - %s " % os.path.basename(infilepath))
 

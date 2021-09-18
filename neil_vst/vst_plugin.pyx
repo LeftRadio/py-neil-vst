@@ -406,12 +406,16 @@ class VstPlugin(object):
         self.logger.debug("EDIT GET RECT: %s" % py_rect)
         return py_rect
 
-    def edit_open(self, window_pointer):
+    def edit_open(self, window_pointer, gui_callback=None):
         self.logger.debug("EDIT OPEN...")
+        host = VstPlugin._host_binds[ self.unique_id ]
+        host.gui_callback = gui_callback
         self._dispatch_to_c_plugin(AEffectOpcodes.effEditOpen, 0, 0, <long long> window_pointer, 0.0)
 
     def edit_close(self, window_pointer):
         self.logger.debug("EDIT CLOSE...")
+        host = VstPlugin._host_binds[ self.unique_id ]
+        host.gui_callback = None
         self._dispatch_to_c_plugin(AEffectOpcodes.effEditClose, 0, 0, <long long> NULL, 0.0)
 
 
