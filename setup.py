@@ -4,9 +4,9 @@ from pathlib import Path
 import os
 import os.path
 from Cython.Build import cythonize
-# from neil_vst import __version__
 
-__version__ = '0.2.6'
+
+__version__ = '0.2.7'
 
 this_directory = os.path.dirname(__file__)
 packages = setuptools.find_packages()
@@ -22,8 +22,6 @@ ext_modules = cythonize( [
 ],
         compiler_directives={
             'language_level': "3"
-            # 'optimize.use_switch': False,
-            # 'optimize.unpack_method_calls': False
         },
 
 )
@@ -49,9 +47,16 @@ setuptools.setup(
        'SoundFile>=0.10.3.post1',
        'numpy==1.19.0'
     ],
+    entry_points={
+        "console_scripts": [
+            "neil_vst_chain=neil_vst.cli_script:main",
+        ]
+    },
+    include_package_data=True,
+
     author='Vladislav Kamenev',  # Type in your name
     author_email='',
-    url='https://github.com/leftradio/neil_vst',
+    url='https://github.com/LeftRadio/py-neil-vst',
     keywords=['vst', 'plugin', 'cython'],
     classifiers=[
         'Development Status :: 4 - Beta',
